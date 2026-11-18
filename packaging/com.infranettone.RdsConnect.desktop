@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=RDS por SSM
+Comment=Conecta por Session Manager a las bases de datos RDS de todas las cuentas de AWS
+Exec=infranettone-rds-connect
+Icon=drive-harddisk
+Categories=Network;System;Development;
+Keywords=aws;rds;aurora;postgres;mysql;ssm;tunnel;
+StartupNotify=true

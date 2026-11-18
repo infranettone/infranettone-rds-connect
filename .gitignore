@@ -1,0 +1,5 @@
+.venv/
+__pycache__/
+dist/
+*.deb
+rds_connect/_version.py
