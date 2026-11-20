@@ -1,5 +1,6 @@
 """Interfaz GTK4/libadwaita: todas las bases RDS por perfil, buscador y botones de túnel y cliente por SSM."""
 
+import shlex
 import socket
 import threading
 import traceback
@@ -286,16 +287,19 @@ class Window(Adw.ApplicationWindow):
         self.errors = [e for e in self.errors if e.profile != profile]
         self._build()
 
-    def _dialog(self, heading: str, body: str, rows: list[Gtk.Widget], label: str, on_ok) -> None:
+    def _dialog(self, heading: str, body: str, rows: list[Gtk.Widget], label: str, on_ok,
+                extra: tuple[str, object] | None = None) -> None:
         box = Gtk.ListBox(css_classes=["boxed-list"], selection_mode=Gtk.SelectionMode.NONE)
         for r in rows:
             box.append(r)
         d = Adw.AlertDialog(heading=heading, body=body, extra_child=box)
         d.add_response("cancel", "Cancelar")
+        if extra:
+            d.add_response("extra", extra[0])
         d.add_response("ok", label)
         d.set_response_appearance("ok", Adw.ResponseAppearance.SUGGESTED)
         d.set_default_response("ok")
-        d.connect("response", lambda _d, r: r == "ok" and on_ok())
+        d.connect("response", lambda _d, r: on_ok() if r == "ok" else (extra[1]() if r == "extra" else None))
         d.present(self)
 
     def _tunnel(self, d: Database) -> None:
@@ -310,19 +314,36 @@ class Window(Adw.ApplicationWindow):
         reader = Adw.SwitchRow(title="Endpoint de lectura", visible=bool(d.reader_host))
         rows = [local, reader]
 
-        def ok():
+        def port() -> int | None:
             try:
-                port = int(local.get_text())
-                if not 0 < port < 65536:
-                    raise ValueError
+                p = int(local.get_text())
+                if 0 < p < 65536:
+                    return p
             except ValueError:
-                self.toast("Puerto no válido")
+                pass
+            self.toast("Puerto no válido")
+            return None
+
+        def ok():
+            if (p := port()) is None:
                 return
-            self._open(session.open_tunnel, d, self._bastion(d), port, reader.get_active())
-            self._copy(f"127.0.0.1:{port}")
+            self._open(session.open_tunnel, d, self._bastion(d), p, reader.get_active())
+            self._copy(f"127.0.0.1:{p}")
+
+        def copy_command():
+            # Para lanzarlo a mano (otra terminal, tmux, un script): el mismo `aws ssm start-session`.
+            if (p := port()) is None:
+                return
+            try:
+                cmd = shlex.join(session.tunnel_command(d, self._bastion(d), p, reader.get_active()))
+            except ValueError as e:
+                self.toast(str(e))
+                return
+            self._copy(cmd, "el comando del túnel")
 
         self._dialog(f"Túnel a {d.id}", "Se queda abierto mientras esté la ventana de la terminal. "
-                     "Conecta tu cliente a 127.0.0.1 con el puerto local.", rows, "Abrir túnel", ok)
+                     "Conecta tu cliente a 127.0.0.1 con el puerto local.", rows, "Abrir túnel", ok,
+                     extra=("Copiar comando", copy_command))
 
     def _choose_bastion(self, d: Database) -> None:
         if not d.bastions:
